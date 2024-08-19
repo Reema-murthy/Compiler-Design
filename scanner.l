@@ -51,7 +51,7 @@ int lineno = 1;
 #define ASSIGN 43
 #define PLUS 44
 #define SUB 45
-#define MULT 46
+#define STAR 46
 #define DIV 47
 #define MOD 48
 #define LESSER 49
@@ -69,12 +69,6 @@ int lineno = 1;
 #define SCANF 58
 #define DEFINE 59
 
-#define GETCH 76
-#define STRLEN 77
-#define STRCMP 78
-#define STRCPY 79
-#define STRINGH 80
-
 #define INT_CONST 60
 #define FLOAT_CONST 61
 
@@ -87,6 +81,7 @@ int lineno = 1;
 #define CBO 66
 #define CBC 67
 #define HASH 68
+#define QM 93
 
 #define ARR 69
 #define FUNC 70
@@ -98,12 +93,20 @@ int lineno = 1;
 #define SIGNED_CONST 74
 #define STRING_CONST 75
 #define HEX_CONST 81
-#define BAND 82
+
+#define GETCH 76
+#define STRLEN 77
+#define STRCMP 78
+#define STRCPY 79
+#define STRINGH 80
+
+#define AMPERSAND 82
 #define BOR 83
 #define BLS 84
 #define BRS 85
 #define XOR 86
 #define NOT 87
+
 #define MEMBER 88
 #define PTR_MEMBER 89
 #define PRAGMA 90
@@ -119,7 +122,7 @@ tab [	]
 line [\n]
 char \'.\'
 at [@]
-string \"(.^([%d]|[%f]|[%s]|[%c]))\"
+string \"([^\\\"]|\\.)*\"
 
 %%
 {space}* {}
@@ -168,15 +171,24 @@ strlen return STRLEN;
 strcpy return STRCPY;
 strcmp return STRCMP;
 
+[<]({alpha}|{digit}|{und}|[.])+[>] return HEADER;
+"#pragma" return PRAGMA;
+"#include" return INCLUDE;
+"#line" return LINE;
+"#define" return DEFINE;
+"main()" return MAIN;
+
 {alpha}({alpha}|{digit}|{und})* return IDENTIFIER;
 
 [+-][0-9]{digit}*(\.{digit}+)? return SIGNED_CONST;
-
 0[xX][0-9a-fA-F]+  return HEX_CONST;
 
 "//" return SLC;
 "/*" return MLCS;
 "*/" return MLCE;
+
+"->" return PTR_MEMBER;
+"." return MEMBER;
 
 "<=" return LEQ;
 ">=" return GEQ;
@@ -184,16 +196,18 @@ strcmp return STRCMP;
 "!=" return NEQ;
 "||" return LOR;
 "&&" return LAND;
+
 "|" return BOR;
-"&" return BAND;
+"&" return AMPERSAND;
 "<<" return BLS;
 ">>" return BRS;
 "~" return NOT;
 "^" return XOR;
+
 "=" return ASSIGN;
 "+" return PLUS;
 "-" return SUB;
-"*" return MULT;
+"*" return STAR;
 "/" return DIV;
 "%" return MOD;
 "<" return LESSER;
@@ -204,33 +218,23 @@ strcmp return STRCMP;
 "," return COMMA;
 ";" return SEMI;
 
-"#include<stdio.h>" return HEADER;
-"#include <stdio.h>" return HEADER;
-"#include<string.h>" return STRINGH;
-"#include <string.h>" return STRINGH;
-"main()" return MAIN;
 
-"#pragma" return PRAGMA;
-"#include" return INCLUDE;
-"#line" return LINE;
-
-"->" return PTR_MEMBER;
-"." return MEMBER;
 
 {digit}+ return INT_CONST;
 ({digit}+)\.({digit}+) return FLOAT_CONST;
 
-"%d"|"%f"|"%u"|"%s"|"%li"|"%ld"|"%lf"|"%p" return TYPE_SPEC;
+"%d"|"%f"|"%u"|"%s"|"%li"|"%ld"|"%lf"|"%p"|"%x"|"%o" return TYPE_SPEC;
 "\"" return DQ;
 "(" return OBO;
 ")" return OBC;
 "{" return CBO;
 "}" return CBC;
 "#" return HASH;
+"?" return QM;
 
-{alpha}({alpha}|{digit}|{und})*\[{digit}*\] return ARR;
+{alpha}({alpha}|{digit}|{und})*\[({digit}*|{alpha}({alpha}|{digit}|{und})*)\] return ARR;
 {alpha}({alpha}|{digit}|{und})*\(({alpha}|{digit}|{und}|{space})*\) return FUNC;
-({digit}+)\.({digit}+)\.({digit}|\.)* return NUM_ERR;
+({digit}+)\.({digit}*)\.({digit}|\.)* return NUM_ERR;
 ({digit}|{at})+({alpha}|{digit}|{und}|{at})* return UNKNOWN;
 %%
 
@@ -262,13 +266,14 @@ struct node * createNode(char *token, char *attr)
 
 int hashIndex(char *token)
 {
+    int hp = 59;
 	int hi=0;
 	int l,i;
 	for(i=0;token[i]!='\0';i++)
 	{
-		hi = hi + (int)token[i];
+		hi = (hp*hi) + (int)token[i];
+        hi %= eleCount;
 	}
-	hi = hi%eleCount;
 	return hi;
 }
 
@@ -332,11 +337,11 @@ void display()
    	return;
 }
 
-int main()
+int main(int argc, char** argv)
 {
 	int scan, slcline=0, mlc=0, mlcline=0, dq=0, dqline=0;
-	yyin = fopen("test1.c","r");
-	printf("\n\n");
+    if (argc >= 2) yyin = fopen(argv[1] ,"r");
+	printf("\n");
 	scan = yylex();
 	while(scan)
 	{
@@ -372,6 +377,10 @@ int main()
 			mlcline = lineno;
 			mlc = 1;
 		}
+		else if(scan==35 && mlc==1)
+		{
+			printf("\n******** ERROR!! NESTED MULTILINE COMMENT at Line %d ********\n\n", lineno);
+		}
 		if(scan==36 && mlc==0)
 		{
 			printf("\n******** ERROR!! UNMATCHED MULTILINE COMMENT END %s at Line %d ********\n\n", yytext, lineno);
@@ -381,12 +390,17 @@ int main()
 			mlc = 0;
 			printf("%s\t\t\tMultiline Comment End\t\tLine %d\n", yytext, lineno);
 		}
-		if((scan>=37 && scan<=52) && mlc==0)
+		if((scan>=37 && scan<=52) && mlc==0 && scan != 46)
 		{
 			printf("%s\t\t\tOPERATOR\t\t\tLine %d\n", yytext, lineno);
 			insertToHash(yytext, "OPERATOR");
 		}
-		if((scan==53||scan==54||scan==63||(scan>=64 && scan<=68)) && mlc==0)
+		if(scan==46 && mlc==0)
+		{
+			printf("%s\t\t\tSTAR\t\t\t\tLine %d\n", yytext, lineno);
+			insertToHash(yytext, "STAR");
+		}
+		if((scan==93||scan==53||scan==54||scan==63||(scan>=64 && scan<=68)) && mlc==0)
 		{
 			printf("%s\t\t\tSPECIAL SYMBOL\t\t\tLine %d\n", yytext, lineno);
 			if(scan==63)
@@ -398,7 +412,8 @@ int main()
 		}
 		if((scan==55 || scan==80) && mlc==0)
 		{
-			printf("%s\tHEADER\t\t\t\tLine %d\n",yytext, lineno);
+			printf("%s\t\tHEADER\t\t\t\tLine %d\n",yytext, lineno);
+			insertToHash(yytext, "HEADER");
 		}
 		if(scan==56 && mlc==0)
 		{
@@ -412,7 +427,7 @@ int main()
 		}
 		if((scan==59 || (scan>=90 && scan<=92)) && mlc==0)
 		{
-			printf("%s\t\t\tPRE PROCESSOR DIRECTIVE\t\tLine %d\n", yytext, lineno);
+			printf("%s\t\tPRE PROCESSOR DIRECTIVE\t\tLine %d\n", yytext, lineno);
 			insertToHash(yytext, "PRE PROCESSOR DIRECTIVE");
 		}
 		if(scan==60 && mlc==0)
@@ -467,7 +482,12 @@ int main()
 			printf("%s\t\t\tHEXADECIMAL CONSTANT\t\tLine %d\n",yytext, lineno);
 			insertToHash(yytext, "HEXADECIMAL CONSTANT");
 		}
-		if((scan>=82 && scan<=87) && mlc==0)
+		if(scan==82 && mlc==0)
+		{
+			printf("%s\t\t\tAMPERSAND\t\t\tLine %d\n", yytext, lineno);
+			insertToHash(yytext, "AMPERSAND");
+		}
+		if((scan>=83 && scan<=87) && mlc==0)
 		{
 			printf("%s\t\t\tBITWISE OPERATOR\t\tLine %d\n", yytext, lineno);
 			insertToHash(yytext, "BITWISE OPERATOR");
@@ -485,7 +505,7 @@ int main()
 	printf("\n");
 	printf("\n\t******** SYMBOL TABLE ********\t\t\n");
 	display();
-        printf("-------------------------------------------------------------------\n\n");
+    printf("-------------------------------------------------------------------\n\n");
 }
 int yywrap()
 {
